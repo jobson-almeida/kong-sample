@@ -73,14 +73,13 @@ curl -X POST http://localhost:8001/upstreams/serviceb_upstream/targets --data "t
 
 ### Serviço A
 ```
-[http://localhost:8000/a](http://localhost:8000/a)
+http://localhost:8000/a
 ```
 
 &nbsp;
 ### Serviço B com balanceamento de carga
 ```
-[http://localhost:8000/b](http://localhost:8000/b)
-
+http://localhost:8000/b
 ```
 
 &nbsp;
