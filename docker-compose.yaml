@@ -1,0 +1,149 @@
+version: "3.9"
+ 
+services:
+    postgres:
+        image: postgres:11
+        container_name: kong-database
+        ports:
+            - 5432:5432
+        environment:
+            - POSTGRES_USER=${POSTGRES_USER}
+            - POSTGRES_DB=${POSTGRES_DB}
+            - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        healthcheck: 
+            test: ["CMD", "pg_isready", "-U", $POSTGRES_USER]
+            interval: 5s
+            timeout: 5s
+            retries: 5      
+        restart: always
+        volumes:
+            - 'db:/var/lib/postgresql/data'  
+        networks:
+            - kong-net
+
+    kong-gateway-migrations:
+        image: "kong:3.3.1-alpine"
+        container_name: kong-gateway-migrations
+        environment:
+            - KONG_DATABASE=${KONG_DATABASE}
+            - KONG_PG_HOST=${KONG_PG_HOST}
+            - KONG_PG_PASSWORD=${KONG_PG_PASSWORD}
+            - KONG_PASSWORD=${KONG_PASSWORD}
+        command: kong migrations bootstrap 
+        restart: on-failure
+        depends_on:
+            postgres:
+                condition: service_healthy
+        networks:
+            - kong-net
+
+    kong-gateway:
+        image: "kong:3.3.1-alpine" 
+        container_name: kong-gateway
+        ports:
+            - 8000:8000
+            - 8443:8443
+            - 8001:8001
+            - 8444:8444 
+            - 8445:8445
+            - 8003:8003
+            - 8004:8004
+        environment:
+            - KONG_DATABASE=${KONG_DATABASE}
+            - KONG_PG_HOST=${KONG_PG_HOST}
+            - KONG_PG_USER=${KONG_PG_USER}
+            - KONG_PG_PASSWORD=${KONG_PG_PASSWORD}
+            - KONG_PROXY_ACCESS_LOG=${KONG_PROXY_ACCESS_LOG}
+            - KONG_ADMIN_ACCESS_LOG=${KONG_ADMIN_ACCESS_LOG}
+            - KONG_PROXY_ERROR_LOG=${KONG_PROXY_ERROR_LOG}
+            - KONG_ADMIN_ERROR_LOG=${KONG_ADMIN_ERROR_LOG}
+            - KONG_ADMIN_LISTEN=${KONG_ADMIN_LISTEN}
+            - KONG_LICENSE_DATA
+        depends_on:
+            postgres:
+                condition: service_healthy  
+            kong-gateway-migrations:
+                condition: service_completed_successfully
+        restart: always
+        networks:
+            - kong-net
+
+    konga-prepare:
+        image: pantsel/konga
+        container_name: konga-prepare
+        command: -c prepare -a postgres -u postgresql://${KONGA_DB_USER}:${KONGA_DB_PASSWORD}@kong-database:5432/${KONGA_DB_DATABASE}
+        healthcheck: 
+            test: ["CMD", "pg_isready", "-U", $KONG_PG_HOST]
+            interval: 5s
+            timeout: 5s
+            retries: 5  
+        depends_on:
+            kong-gateway:
+                condition: service_healthy
+        networks:
+            - kong-net
+
+    konga:
+        image: pantsel/konga
+        container_name: konga
+        ports:
+            - 1337:1337
+        environment:
+            - DB_ADAPTER=postgres
+            - DB_HOST=${KONGA_DB_HOST}
+            - DB_USER=${KONGA_DB_USER}
+            - DB_PASSWORD=${KONGA_DB_PASSWORD}
+            - DB_DATABASE=${KONGA_DB_DATABASE}
+            - KONGA_HOOK_TIMEOUT=120000
+            - NODE_ENV=${KONGA_DB_NODE_ENV}
+        depends_on:
+            kong-gateway:
+                condition: service_healthy
+            konga-prepare:
+                condition: service_completed_successfully
+        restart: always
+        networks:
+            - kong-net                 
+
+    servicea:
+        build: .
+        container_name: servicea
+        ports:
+            - 3001:3001
+        environment:
+            PORT: 3001
+            SERVICE_NAME: "Service A"
+        networks:
+            - kong-net
+
+    serviceb1:
+        build:
+            context: .
+        container_name: serviceb1
+        ports:
+            - 3021:3021
+        environment:
+            PORT: 3021
+            SERVICE_NAME: "Service B1"
+        networks:
+            - kong-net
+
+    serviceb2:
+        build:
+            context: .
+        container_name: serviceb2
+        ports:
+            - 3022:3022
+        environment:
+            PORT: 3022
+            SERVICE_NAME: "Service B2"
+        networks:
+            - kong-net
+
+volumes:
+    db:
+    
+networks:
+    kong-net:
+        name: kong-net
+        external: true
